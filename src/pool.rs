@@ -7,11 +7,13 @@ struct PoolMem<T> {
 	size: usize,
 }
 
+#[derive(Debug)]
 pub struct Pool<T>  {
 	first_free: Mutex<*mut T>,
 	head_arena: UnsafeCell<*mut PoolMem<T>>,
 }
 
+#[derive(Debug)]
 pub struct PoolRef<'a, 'b, T> {
 	ptr: &'b mut T,
 	origin_pool: &'a Pool<T>,
