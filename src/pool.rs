@@ -8,7 +8,7 @@ struct PoolMem<T> {
 }
 
 #[derive(Debug)]
-pub struct Pool<T>  {
+pub struct Pool<T> {
 	first_free: Mutex<*mut T>,
 	head_arena: UnsafeCell<*mut PoolMem<T>>,
 }
