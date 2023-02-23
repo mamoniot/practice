@@ -1,8 +1,10 @@
-use std::{sync::Mutex, mem::{MaybeUninit, self}, ptr, cell::UnsafeCell, ops::{DerefMut, Deref}};
+use std::{sync::Mutex, mem::{MaybeUninit, size_of}, ptr, cell::UnsafeCell, ops::{DerefMut, Deref}};
 
-const L: usize = 128;
+const PAGE_SIZE: usize = 1<<12;
+const L: usize = PAGE_SIZE - 2*size_of::<usize>();
+
 struct PoolMem<T> {
-	mem: [MaybeUninit<T>; L],
+	mem: [MaybeUninit<u8>; L],
 	pre: *mut PoolMem<T>,
 	size: usize,
 }
@@ -22,7 +24,8 @@ pub struct PoolRef<'a, 'b, T> {
 
 impl<T> Pool<T> {
 	pub fn new() -> Self {
-		debug_assert!(mem::size_of::<T>() >= mem::size_of::<*mut T>());
+		debug_assert!(size_of::<T>() >= size_of::<*mut T>());
+		debug_assert!(size_of::<T>() < L);
 		Pool {
 			first_free: Mutex::new(std::ptr::null_mut()),
 			head_arena: UnsafeCell::new(Box::leak(Box::new(PoolMem {
@@ -46,9 +49,10 @@ impl<T> Pool<T> {
 					*self.head_arena.get() = new;
 					arena = new;
 				}
-				let slot = &mut (*arena).mem[(*arena).size];
+				let slot = &mut (*arena).mem[(*arena).size * size_of::<T>()];
 				(*arena).size += 1;
-				slot.as_mut_ptr()
+
+				slot.as_mut_ptr().cast()
 			} else {
 				let ptr = *mutex;
 				*mutex = *ptr.cast::<*mut T>();
