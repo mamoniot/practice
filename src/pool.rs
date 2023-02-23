@@ -1,100 +1,120 @@
-use std::{sync::Mutex, cell::UnsafeCell, ops::{Deref, DerefMut}, mem::{MaybeUninit, ManuallyDrop}};
+use std::{sync::Mutex, mem::MaybeUninit, ptr, cell::UnsafeCell, ops::{DerefMut, Deref}};
 
-union PoolSlot<T> {
-	obj: ManuallyDrop<MaybeUninit<T>>,
-	next: usize,
+const L: usize = 128;
+struct PoolMem<T> {
+	mem: [MaybeUninit<T>; L],
+	pre: *mut PoolMem<T>,
+	size: usize,
 }
 
-pub struct Pool<T> {
-	arena: UnsafeCell<Vec<PoolSlot<T>>>,
-	first_free: Mutex<usize>,
+pub struct Pool<T>  {
+	first_free: Mutex<*mut T>,
+	head_arena: UnsafeCell<*mut PoolMem<T>>,
 }
-pub struct PoolRef<'a, T> {
-	idx: usize,
+
+pub struct PoolRef<'a, 'b, T> {
+	ptr: &'b mut T,
 	origin_pool: &'a Pool<T>,
 }
+
 
 impl<T> Pool<T> {
 	pub fn new() -> Self {
 		Pool {
-			first_free: Mutex::new(usize::MAX),
-			arena: UnsafeCell::new(Vec::new()),
+			first_free: Mutex::new(std::ptr::null_mut()),
+			head_arena: UnsafeCell::new(Box::leak(Box::new(PoolMem {
+				pre: ptr::null_mut(),
+				size: 0,
+				mem: std::array::from_fn(|_| MaybeUninit::uninit()),
+			}))),
 		}
 	}
-	pub fn alloc<'a>(&'a self, obj: T) -> PoolRef<'a, T> {
-		let arena = unsafe { &mut *self.arena.get() };
-
-		let mut mutex = self.first_free.lock().unwrap();
-		let idx = if *mutex == usize::MAX {
-			arena.push(PoolSlot {obj: ManuallyDrop::new(MaybeUninit::new(obj))});
-			arena.len() - 1
-		} else {
-			let idx = *mutex;
-			unsafe {
-				*mutex = arena[idx].next;
-				arena[idx].obj.write(obj);
-			}
-			idx
-		};
-		PoolRef {idx, origin_pool: self}
-	}
-	fn free(&self, idx: usize) {
+	pub fn alloc_ptr(&self) -> *mut T {
 		unsafe {
-			//drop
-			let arena = &mut *self.arena.get();
-			arena[idx].obj.assume_init_drop();
+			let mut mutex = self.first_free.lock().unwrap();
+			if mutex.is_null() {
+				let mut arena = *self.head_arena.get();
+				if (*arena).size >= L {
+					let new = Box::leak(Box::new(PoolMem {
+						pre: arena,
+						size: 0,
+						mem: std::array::from_fn(|_| MaybeUninit::uninit()),
+					}));
+					*self.head_arena.get() = new;
+					arena = new;
+				}
+				let slot = &mut (*arena).mem[(*arena).size];
+				(*arena).size += 1;
+				slot.as_mut_ptr()
+			} else {
+				let ptr = *mutex;
+				*mutex = *ptr.cast::<*mut T>();
+				ptr
+			}
+		}
+	}
+	pub fn free_ptr(&self, ptr: *mut T) {
+		unsafe {
 			//linked-list insert
 			let mut mutex = self.first_free.lock().unwrap();
-			arena[idx].next = *mutex;
-			*mutex = idx;
+			*ptr.cast::<*mut T>() = *mutex;
+			*mutex = ptr;
+		}
+	}
+
+	pub fn alloc_ref(&self, obj: T) -> &mut T {
+		unsafe {
+			let ptr = self.alloc_ptr();
+			ptr.write(obj);
+			&mut *ptr
+		}
+	}
+	pub fn free_ref(&self, ptr: &mut T) {
+		let ptr: *mut T = ptr;
+		unsafe {
+			ptr.drop_in_place();
+			self.free_ptr(ptr);
+		}
+	}
+
+	pub fn alloc_raii(&self, obj: T) -> PoolRef<T> {
+		PoolRef {
+			ptr: self.alloc_ref(obj),
+			origin_pool: self,
 		}
 	}
 }
+
 
 impl<T> Drop for Pool<T> {
 	fn drop(&mut self) {
 		let mutex = self.first_free.lock().unwrap();
 		unsafe {
-			//drop
-			let arena = &mut *self.arena.get();
-			alloca::with_alloca_zeroed((arena.len() + 7)/8, |buffer| {
-				let mut free = *mutex;
-				while free != usize::MAX {
-					let idx = free/8;
-					let bit = free%8;
-					buffer[idx] |= 1u8<<bit;//mark the index as unoccupied
-					free = arena[free].next;
-				}
-
-				for i in 0..arena.len() {
-					let idx = i/8;
-					let bit = i%8;
-					if (buffer[idx]>>bit)&1 == 0 {
-						arena[i].obj.assume_init_drop();
-					}
-				}
-			});
+			let mut arena = *self.head_arena.get();
+			while !arena.is_null() {
+				let mem = Box::from_raw(arena);
+				arena = mem.pre;
+				drop(mem);
+			}
 		}
+		drop(mutex);
 	}
 }
 
-impl<'a, T> Deref for PoolRef<'a, T> {
+
+impl<'a, 'b, T> Deref for PoolRef<'a, 'b, T> {
 	type Target = T;
 	fn deref(&self) -> &Self::Target {
-		unsafe {
-			(&*self.origin_pool.arena.get())[self.idx].obj.assume_init_ref()
-		}
+		self.ptr
 	}
 }
-impl<'a, T> DerefMut for PoolRef<'a, T> {
+impl<'a, 'b, T> DerefMut for PoolRef<'a, 'b, T> {
 	fn deref_mut(&mut self) -> &mut T {
-		unsafe {
-			(&mut *self.origin_pool.arena.get())[self.idx].obj.assume_init_mut()
-		}
+		self.ptr
 	}
 }
-impl<'a, T> Drop for PoolRef<'a, T> {
+impl<'a, 'b, T> Drop for PoolRef<'a, 'b, T> {
 	fn drop(&mut self) {
-		self.origin_pool.free(self.idx);
+		self.origin_pool.free_ref(self.ptr);
 	}
 }
