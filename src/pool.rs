@@ -40,7 +40,7 @@ impl<T> Pool<T> {
 			let mut mutex = self.first_free.lock().unwrap();
 			if mutex.is_null() {
 				let mut arena = *self.head_arena.get();
-				if (*arena).size >= L {
+				if (*arena).size >= L/size_of::<T>() {
 					let new = Box::leak(Box::new(PoolMem {
 						pre: arena,
 						size: 0,
