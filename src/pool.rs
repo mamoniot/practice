@@ -22,7 +22,7 @@ pub struct PoolRef<'a, 'b, T> {
 
 impl<T> Pool<T> {
 	pub fn new() -> Self {
-		debug_assert!(mem::size_of::<T>() > mem::size_of::<*mut T>());
+		debug_assert!(mem::size_of::<T>() >= mem::size_of::<*mut T>());
 		Pool {
 			first_free: Mutex::new(std::ptr::null_mut()),
 			head_arena: UnsafeCell::new(Box::leak(Box::new(PoolMem {
