@@ -2,34 +2,22 @@ mod pool;
 
 use pool::*;
 
-struct test (i64, i64);
-impl Drop for test {
+struct Test (usize, usize);
+impl Drop for Test {
 	fn drop(&mut self) {
 		println!("drop {}", self.0);
 	}
 }
 
-
-
 fn main() {
-	let pool = Pool::new();
-	let mut v = Vec::new();
+	const N: usize = 10;
+	let pool = Pool::<_, 100>::with_capacity();
+	let mut v: [_; N] = std::array::from_fn(|i| pool.alloc_raii(Test(i, i)));
 
-	let b = pool.alloc_ref(test(561435, -1));
-
-	for i in 0..100 {
-		let a = pool.alloc_ref(test(i, i));
-		print!("{}, ", a.0);
-		v.push(a);
+	for j in 0..N {
+		let i = (j*13)%N;
+		let p = pool.alloc_raii(Test(v[i].0 + N, i));
+		println!("add  {}", p.0);
+		v[i] = p;
 	}
-
-	//for i in 0..100 {
-		//let a = pool.alloc_raii(test(i));
-		//print!("{}, ", a.0);
-		//v.push(a);
-	//}
-
-	//pool.free_ref(b);
-
-	print!("{}, ", b.0);
 }
