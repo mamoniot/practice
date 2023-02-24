@@ -18,7 +18,7 @@ fn main() {
 	let b = pool.alloc_ref(test(561435, -1));
 
 	for i in 0..100 {
-		let a = pool.alloc_raii(test(i, i));
+		let a = pool.alloc_ref(test(i, i));
 		print!("{}, ", a.0);
 		v.push(a);
 	}
