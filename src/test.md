@@ -15,7 +15,6 @@ Security properties:
 * We want to encrypt sensitive fields (ratchet states, invite tokens, etc.) so users are less likely to compromise themselves when making support requests.
 * Invite tokens should be removed after an arbitrary time-to-live.
 
-
 SQLite Schema:
 ```sql
 CREATE TABLE IF NOT EXISTS peers (
