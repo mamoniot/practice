@@ -17,14 +17,14 @@ Security properties:
 
 SQLite Schema:
 ```sql
-CREATE TABLE peers (
+CREATE TABLE IF NOT EXISTS peers (
 	salted_addr CHAR(16) PRIMARY KEY,
 	short_addr CHAR(16) NOT NULL,
 	identity TEXT,
 	ip TEXT,
 	status CHAR(4)
 );
-CREATE TABLE ratchets (
+CREATE TABLE IF NOT EXISTS ratchets (
 	salted_fingerprint CHAR(16) PRIMARY KEY,
 	fingerprint CHAR(32),
 	key CHAR(32) NOT NULL,
@@ -34,17 +34,17 @@ CREATE TABLE ratchets (
 	FOREIGN KEY (peer) REFERENCES peers(salted_addr)
 		ON DELETE CASCADE
 );
-CREATE TABLE invite_token (
+CREATE TABLE IF NOT EXISTS invite_tokens (
 	salted_token CHAR(16) PRIMARY KEY,
 	token VARCHAR(32) NOT NULL,
     expiry_time BIGINT NOT NULL,
 
 	salted_fingerprint CHAR(16) UNIQUE NOT NULL,
-	fingerprint CHAR(32) NOT NULL,
-	key CHAR(32) NOT NULL
+	ratchet_fingerprint CHAR(32) NOT NULL,
+	ratchet_key CHAR(32) NOT NULL
 );
-CREATE UNIQUE INDEX idx_peer_addr ON peers(salted_addr);
-CREATE UNIQUE INDEX idx_ratchet_fingerprint ON ratchets(salted_fingerprint);
-CREATE UNIQUE INDEX idx_invite_fingerprint ON invite_token(salted_fingerprint);
-CREATE UNIQUE INDEX idx_invite_token ON invite_tokens(salted_token);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_peer_addr ON peers(salted_addr);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ratchet_fingerprint ON ratchets(salted_fingerprint);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invite_fingerprint ON invite_tokens(salted_fingerprint);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invite_token ON invite_tokens(salted_token);
 ```
